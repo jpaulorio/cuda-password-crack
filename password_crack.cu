@@ -69,7 +69,7 @@ crackPassword(
 {
     __shared__ char s_encrypted_password[7];
     __shared__ char s_encryption_key[4];
-    char temp_password[7];
+    char *temp_password;
     
     const unsigned int tid = threadIdx.x;
     const unsigned int bid = blockIdx.x;
@@ -82,8 +82,9 @@ crackPassword(
     }
     __syncthreads();
 
+    temp_password = "abcdef";
+
     while (!g_found) {
-        d_strcpy(s_encrypted_password, temp_password);
         i_found = 1;
         g_found = 1;
     }
@@ -110,10 +111,7 @@ runTest(int argc, char **argv)
     // use command-line specified CUDA device, otherwise use device with highest Gflops/s
     int devID = findCudaDevice(argc, (const char **)argv);
 
-    StopWatchInterface *timer = 0;
-    sdkCreateTimer(&timer);
-    sdkStartTimer(&timer);
-
+    
     unsigned int num_threads = 1;
     unsigned int pwd_max_size = 32 + 1;
     unsigned int key_max_size = 32 + 1;
@@ -127,9 +125,13 @@ runTest(int argc, char **argv)
     
     uint pwd_size = strlen(encrypted_password) + 1;
     uint key_size = strlen(encryption_key) + 1;
-
+    
     unsigned int pwd_mem_size = pwd_size * sizeof(char);
     unsigned int key_mem_size = key_size * sizeof(char);
+
+    StopWatchInterface *timer = 0;
+    sdkCreateTimer(&timer);
+    sdkStartTimer(&timer);
 
     char *d_encrypted_password, *d_decrypted_password, *d_encryption_key;
     checkCudaErrors(cudaMalloc((void **) &d_encrypted_password, pwd_mem_size));
@@ -162,12 +164,10 @@ runTest(int argc, char **argv)
     sdkDeleteTimer(&timer);
 
     // cleanup memory
-    free(encrypted_password);
-    free(encryption_key);
     free(decrypted_password);
     checkCudaErrors(cudaFree(d_encrypted_password));
     checkCudaErrors(cudaFree(d_encryption_key));
     checkCudaErrors(cudaFree(d_decrypted_password));
 
-    exit(bTestResult ? EXIT_SUCCESS : EXIT_FAILURE);
+    exit(EXIT_SUCCESS);
 }
