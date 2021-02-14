@@ -53,7 +53,6 @@ __device__ void d_strcpy (char *origin, char *destination) {
 
 __device__ void d_encrypt(char *uncrypted, char *encryption_key, int key_length, char *encrypted) {
     for (uint i = 0; *uncrypted != 0; ++i, ++uncrypted, ++encrypted) {
-        printf("here2 %c\n", *uncrypted);
         if (*uncrypted != 0) {
             uint key_index = i % key_length;
             *encrypted = (*uncrypted + encryption_key[key_index]) % 128;
@@ -63,22 +62,59 @@ __device__ void d_encrypt(char *uncrypted, char *encryption_key, int key_length,
     }
 }
 
+__device__ void fill_with_zeros(char *array) {
+    int array_lenght = sizeof(array);
+    for (int i=0; i < array_lenght - 1; i++) {
+        array[i] = 0;
+    }
+    array[array_lenght - 1] = 0;
+}
+
+__device__ void d_ulong_to_char_array(unsigned long search_pos, unsigned long search_space_size, char *output) {
+    const uint total_no_ascii_chars = 128;
+    char pwd_candidate[7];
+    fill_with_zeros(pwd_candidate);
+
+    unsigned int integer_part = search_pos / total_no_ascii_chars;
+    unsigned int remainder = search_pos % total_no_ascii_chars;
+    uint idx = 0;
+    pwd_candidate[idx] = remainder;
+    pwd_candidate[idx + 1] = integer_part;
+    printf("integer: %lu\n", integer_part);
+    printf("remainder: %lu\n", remainder);
+    while (integer_part > 0) {
+        pwd_candidate[idx] = remainder;
+        pwd_candidate[idx + 1] = integer_part;
+        integer_part = integer_part / total_no_ascii_chars;
+        remainder = integer_part % total_no_ascii_chars;
+        printf("integer: %lu\n", integer_part);
+        printf("remainder: %lu\n", remainder);
+        idx++;
+    }
+
+    printf("candidate: %s\n", pwd_candidate);
+
+    d_strcpy(pwd_candidate, output);
+}
+
 __global__ void
 crackPassword(
     int g_encrypted_password_length, char *g_encrypted_password, char *g_decrypted_password,
     int g_encryption_key_length, char *g_encryption_key,
-    unsigned long search_space_size, int g_found)
+    unsigned long g_search_space_size, int g_found)
 {
     __shared__ char s_encrypted_password[7];
     __shared__ char s_encryption_key[4];
-    // char temp_password[7];
-    char *temp_password;
+    char temp_password[7];
+    char temp_encrypted_password[7];
     
     const unsigned int tid = threadIdx.x;
     const unsigned int bid = blockIdx.x;
     const unsigned int num_threads = blockDim.x;
+    const unsigned long l_search_space_size = g_search_space_size;
     const unsigned long start_search = 0;
-    const unsigned long end_search = search_space_size - 1;
+    const unsigned long end_search = l_search_space_size;
+    const int key_length = g_encryption_key_length;
     unsigned long search_pos = start_search;
     unsigned int i_found = g_found;
 
@@ -89,14 +125,16 @@ crackPassword(
     __syncthreads();
 
     while (!g_found) {
-        // ulong_to_char_array(search_pos, temp_password);
-        temp_password = "abcdef";
+        d_ulong_to_char_array(search_pos, l_search_space_size, temp_password);
         printf("temp pwd: %s\n", temp_password);
-        i_found = d_strcmp(temp_password, s_encrypted_password) == 0;
+        d_encrypt(temp_password, s_encryption_key, key_length, temp_encrypted_password);
+        printf("temp enc pwd: %s\n", temp_encrypted_password);
+        i_found = d_strcmp(temp_encrypted_password, s_encrypted_password) == 0;
         printf("i found: %d\n", i_found);
         if (i_found) {
             g_found = 1;
         }
+        search_pos++;
     }
 
     if (i_found) {
