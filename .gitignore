@@ -1,0 +1,8 @@
+.cproject
+.vscode/
+Debug/
+.project
+data/
+NsightEclipse.xml
+*.o
+password_crack
