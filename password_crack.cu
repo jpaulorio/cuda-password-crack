@@ -141,9 +141,9 @@ runTest(int argc, char **argv)
     unsigned long search_space_size = pow(128, pwd_size);
     printf("Search space size: %lu\n", search_space_size);
 
-    StopWatchInterface *timer = 0;
-    sdkCreateTimer(&timer);
-    sdkStartTimer(&timer);
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
     char *d_encrypted_password, *d_decrypted_password, *d_encryption_key;
     checkCudaErrors(cudaMalloc((void **) &d_encrypted_password, pwd_mem_size));
@@ -158,8 +158,10 @@ runTest(int argc, char **argv)
     dim3  grid(1, 1, 1);
     dim3  threads(num_threads, 1, 1);
 
+    cudaEventRecord(start);
     // execute the kernel
     crackPassword<<<grid, threads>>>(pwd_size, d_encrypted_password, d_decrypted_password, key_size, d_encryption_key, search_space_size, 0);
+    cudaEventRecord(stop);
 
     // check if kernel execution generated and error
     getLastCudaError("Kernel execution failed");
@@ -169,11 +171,13 @@ runTest(int argc, char **argv)
     // copy result from device to host
     checkCudaErrors(cudaMemcpy(decrypted_password, d_decrypted_password, pwd_mem_size, cudaMemcpyDeviceToHost));
 
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+
     printf("Decrypted password: %s \n", decrypted_password);
 
-    sdkStopTimer(&timer);
-    printf("Processing time: %f (ms)\n", sdkGetTimerValue(&timer));
-    sdkDeleteTimer(&timer);
+    printf("Processing time: %f (ms)\n", milliseconds);
 
     // cleanup memory
     free(decrypted_password);
