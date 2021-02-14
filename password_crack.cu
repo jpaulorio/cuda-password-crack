@@ -23,10 +23,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
-// includes CUDA
 #include <cuda_runtime.h>
 
-// includes, project
 #include <helper_cuda.h>
 #include <helper_functions.h> // helper functions for SDK examples
 
@@ -34,50 +32,74 @@
 // declaration, forward
 void runTest(int argc, char **argv);
 
-extern "C"
-void computeGold(float *reference, float *idata, const unsigned int len);
-
-////////////////////////////////////////////////////////////////////////////////
-//! Simple test kernel for device functionality
-//! @param g_idata  input data in global memory
-//! @param g_odata  output data in global memory
-////////////////////////////////////////////////////////////////////////////////
-__global__ void
-testKernel(float *g_idata, float *g_odata)
-{
-    // shared memory
-    // the size is determined by the host application
-    extern  __shared__  float sdata[];
-
-    // access thread id
-    const unsigned int tid = threadIdx.x;
-    // access number of threads in this block
-    const unsigned int num_threads = blockDim.x;
-
-    // read in input data from global memory
-    sdata[tid] = g_idata[tid];
-    __syncthreads();
-
-    // perform some computations
-    sdata[tid] = (float) num_threads * sdata[tid];
-    __syncthreads();
-
-    // write data to global memory
-    g_odata[tid] = sdata[tid];
+__device__ int d_strcmp (const char *s1, const char *s2) {
+    for(; *s1 == *s2; ++s1, ++s2) {
+        if(*s1 == 0)
+            return 0;
+    }
+    return *(unsigned char *)s1 < *(unsigned char *)s2 ? -1 : 1;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Program main
-////////////////////////////////////////////////////////////////////////////////
+__device__ void d_strcpy (char *origin, char *destination) {
+    char *tmp = origin;
+    int idx = 0;
+    for (; *tmp != 0; ++idx, ++tmp) {
+        destination[idx] = *tmp;
+    }
+    destination[idx] = 0;
+}
+
+__device__ void d_encrypt(char *uncrypted, char *encryption_key, int key_length, char *encrypted) {
+    for (uint i = 0; *uncrypted != 0; ++i, ++uncrypted, ++encrypted) {
+        printf("here2 %c\n", *uncrypted);
+        if (*uncrypted != 0) {
+            uint key_index = i % key_length;
+            *encrypted = (*uncrypted + encryption_key[key_index]) % 128;
+        } else {
+            *encrypted = 0;
+        }
+    }
+}
+
+__global__ void
+crackPassword(
+    int g_encrypted_password_length, char *g_encrypted_password, char *g_decrypted_password,
+    int g_encryption_key_length, char *g_encryption_key,
+    int g_found)
+{
+    __shared__ char s_encrypted_password[7];
+    __shared__ char s_encryption_key[4];
+    char temp_password[7];
+    
+    const unsigned int tid = threadIdx.x;
+    const unsigned int bid = blockIdx.x;
+    const unsigned int num_threads = blockDim.x;
+    unsigned int i_found = g_found;
+
+    if (tid == 0) {
+        d_strcpy(g_encrypted_password, s_encrypted_password);
+        d_strcpy(g_encryption_key, s_encryption_key);
+    }
+    __syncthreads();
+
+    while (!g_found) {
+        d_strcpy(s_encrypted_password, temp_password);
+        i_found = 1;
+        g_found = 1;
+    }
+
+    if (i_found) {
+        printf("found!!!\n");
+        d_strcpy(temp_password, g_decrypted_password);
+    }
+}
+
 int
 main(int argc, char **argv)
 {
     runTest(argc, argv);
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//! Run a simple test for CUDA
-////////////////////////////////////////////////////////////////////////////////
 void
 runTest(int argc, char **argv)
 {
@@ -92,80 +114,60 @@ runTest(int argc, char **argv)
     sdkCreateTimer(&timer);
     sdkStartTimer(&timer);
 
-    unsigned int num_threads = 32;
-    unsigned int mem_size = sizeof(float) * num_threads;
+    unsigned int num_threads = 1;
+    unsigned int pwd_max_size = 32 + 1;
+    unsigned int key_max_size = 32 + 1;
+    
+    char encrypted_password[pwd_max_size];
+    char encryption_key[key_max_size];
+    printf("Enter the encrypted password:\n");
+    scanf("%32s", encrypted_password);
+    printf("Enter the encryption key:\n");
+    scanf("%32s", encryption_key);
+    
+    uint pwd_size = strlen(encrypted_password) + 1;
+    uint key_size = strlen(encryption_key) + 1;
 
-    // allocate host memory
-    float *h_idata = (float *) malloc(mem_size);
+    unsigned int pwd_mem_size = pwd_size * sizeof(char);
+    unsigned int key_mem_size = key_size * sizeof(char);
 
-    // initalize the memory
-    for (unsigned int i = 0; i < num_threads; ++i)
-    {
-        h_idata[i] = (float) i;
-    }
-
-    // allocate device memory
-    float *d_idata;
-    checkCudaErrors(cudaMalloc((void **) &d_idata, mem_size));
-    // copy host memory to device
-    checkCudaErrors(cudaMemcpy(d_idata, h_idata, mem_size,
-                               cudaMemcpyHostToDevice));
-
-    // allocate device memory for result
-    float *d_odata;
-    checkCudaErrors(cudaMalloc((void **) &d_odata, mem_size));
+    char *d_encrypted_password, *d_decrypted_password, *d_encryption_key;
+    checkCudaErrors(cudaMalloc((void **) &d_encrypted_password, pwd_mem_size));
+    checkCudaErrors(cudaMalloc((void **) &d_encryption_key, key_mem_size));
+    //output
+    checkCudaErrors(cudaMalloc((void **) &d_decrypted_password, pwd_mem_size));
+    
+    checkCudaErrors(cudaMemcpy(d_encrypted_password, encrypted_password, pwd_mem_size, cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(d_encryption_key, encryption_key, key_mem_size, cudaMemcpyHostToDevice));
 
     // setup execution parameters
     dim3  grid(1, 1, 1);
     dim3  threads(num_threads, 1, 1);
 
     // execute the kernel
-    testKernel<<< grid, threads, mem_size >>>(d_idata, d_odata);
+    crackPassword<<<grid, threads>>>(pwd_size, d_encrypted_password, d_decrypted_password, key_size, d_encryption_key, 0);
 
     // check if kernel execution generated and error
     getLastCudaError("Kernel execution failed");
 
     // allocate mem for the result on host side
-    float *h_odata = (float *) malloc(mem_size);
+    char *decrypted_password = (char *) malloc(pwd_mem_size);
     // copy result from device to host
-    checkCudaErrors(cudaMemcpy(h_odata, d_odata, sizeof(float) * num_threads,
-                               cudaMemcpyDeviceToHost));
+    checkCudaErrors(cudaMemcpy(decrypted_password, d_decrypted_password, pwd_mem_size, cudaMemcpyDeviceToHost));
+
+    printf("Decrypted password: %s \n", decrypted_password);
 
     sdkStopTimer(&timer);
     printf("Processing time: %f (ms)\n", sdkGetTimerValue(&timer));
     sdkDeleteTimer(&timer);
 
-    // compute reference solution
-    float *reference = (float *) malloc(mem_size);
-    computeGold(reference, h_idata, num_threads);
-
-    // check result
-    if (checkCmdLineFlag(argc, (const char **) argv, "regression"))
-    {
-        // write file for regression test
-        DIR* dir = opendir("./data");
-        if (!dir) {
-            const int dir_err = mkdir("./data", S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
-            if (-1 == dir_err) {
-                printf("Error creating data directory!n");
-                exit(1);
-            }
-        }
-        sdkWriteFile("./data/regression.dat", h_odata, num_threads, 0.0f, false);
-    }
-    else
-    {
-        // custom output handling when no regression test running
-        // in this case check if the result is equivalent to the expected solution
-        bTestResult = compareData(reference, h_odata, num_threads, 0.0f, 0.0f);
-    }
-
     // cleanup memory
-    free(h_idata);
-    free(h_odata);
-    free(reference);
-    checkCudaErrors(cudaFree(d_idata));
-    checkCudaErrors(cudaFree(d_odata));
+    free(encrypted_password);
+    free(encryption_key);
+    free(decrypted_password);
+    checkCudaErrors(cudaFree(d_encrypted_password));
+    checkCudaErrors(cudaFree(d_encryption_key));
+    checkCudaErrors(cudaFree(d_decrypted_password));
 
     exit(bTestResult ? EXIT_SUCCESS : EXIT_FAILURE);
 }
