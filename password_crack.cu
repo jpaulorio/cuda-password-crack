@@ -28,6 +28,15 @@
 #include <helper_cuda.h>
 #include <helper_functions.h> // helper functions for SDK examples
 
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 ////////////////////////////////////////////////////////////////////////////////
 // declaration, forward
 void runTest(int argc, char **argv);
@@ -72,7 +81,7 @@ __device__ void fill_with_zeros(char *array) {
     array[array_lenght - 1] = 0;
 }
 
-__device__ void d_ulong_to_char_array(unsigned long search_pos, unsigned long search_space_size, char *output) {
+__device__ void d_ulong_to_char_array(unsigned long search_pos, char *output) {
     const uint total_no_ascii_chars = 128;
     char pwd_candidate[7];
     fill_with_zeros(pwd_candidate);
@@ -108,21 +117,30 @@ crackPassword(
     const unsigned int tid = threadIdx.x;
     const unsigned int bid = blockIdx.x;
     const unsigned int num_threads = blockDim.x;
+    const unsigned int global_tid = bid * num_threads + tid;
+    const unsigned int global_num_threads = gridDim.x * blockDim.x;
+
     const unsigned long l_search_space_size = g_search_space_size;
-    const unsigned long start_search = 0;
-    const unsigned long end_search = l_search_space_size;
+    const unsigned long chunk_size = l_search_space_size / global_num_threads;
+    const unsigned long start_search = global_tid * chunk_size;
+    const unsigned long end_search = start_search + chunk_size;
     const int key_length = g_encryption_key_length;
     unsigned long search_pos = start_search;
     unsigned int i_found = g_found;
 
+    
     if (tid == 0) {
+        if (bid == 0) {
+            printf("Global num threads: %d\n", global_num_threads);
+            printf("Chunk size: %lu\n", chunk_size);
+        }
         d_strcpy(g_encrypted_password, s_encrypted_password);
         d_strcpy(g_encryption_key, s_encryption_key);
     }
     __syncthreads();
 
-    while (!g_found) {
-        d_ulong_to_char_array(search_pos, l_search_space_size, temp_password);
+    while (!g_found && search_pos < end_search) {
+        d_ulong_to_char_array(search_pos, temp_password);
 
         d_encrypt(temp_password, s_encryption_key, key_length, temp_encrypted_password);
 
@@ -130,6 +148,8 @@ crackPassword(
 
         if (i_found) {
             g_found = 1;
+            // printf("Thread %d found it! [%s] Block id:Thread is - %d:%d\n", global_tid, temp_password, bid, tid);
+            // printf("Thread %d start:end:current - %lu:%lu:%lu\n", global_tid, start_search, end_search, search_pos);
         }
         search_pos++;
     }
@@ -148,15 +168,12 @@ main(int argc, char **argv)
 void
 runTest(int argc, char **argv)
 {
-    bool bTestResult = true;
-
     printf("%s Starting...\n\n", argv[0]);
 
     // use command-line specified CUDA device, otherwise use device with highest Gflops/s
     int devID = findCudaDevice(argc, (const char **)argv);
 
     
-    unsigned int num_threads = 1;
     unsigned int pwd_max_size = 32 + 1;
     unsigned int key_max_size = 32 + 1;
     
@@ -189,7 +206,9 @@ runTest(int argc, char **argv)
     checkCudaErrors(cudaMemcpy(d_encryption_key, encryption_key, key_mem_size, cudaMemcpyHostToDevice));
 
     // setup execution parameters
-    dim3  grid(1, 1, 1);
+    unsigned int num_threads = 512;
+    unsigned int num_blocks = 512;
+    dim3  grid(num_blocks, 1, 1);
     dim3  threads(num_threads, 1, 1);
 
     cudaEventRecord(start);
@@ -199,6 +218,8 @@ runTest(int argc, char **argv)
 
     // check if kernel execution generated and error
     getLastCudaError("Kernel execution failed");
+    gpuErrchk(cudaPeekAtLastError());
+    gpuErrchk(cudaDeviceSynchronize());
 
     // allocate mem for the result on host side
     char *decrypted_password = (char *) malloc(pwd_mem_size);
