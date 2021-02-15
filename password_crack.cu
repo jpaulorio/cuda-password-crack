@@ -82,19 +82,14 @@ __device__ void d_ulong_to_char_array(unsigned long search_pos, unsigned long se
     uint idx = 0;
     pwd_candidate[idx] = remainder;
     pwd_candidate[idx + 1] = integer_part;
-    printf("integer: %lu\n", integer_part);
-    printf("remainder: %lu\n", remainder);
+
     while (integer_part > 0) {
         pwd_candidate[idx] = remainder;
         pwd_candidate[idx + 1] = integer_part;
         integer_part = integer_part / total_no_ascii_chars;
         remainder = integer_part % total_no_ascii_chars;
-        printf("integer: %lu\n", integer_part);
-        printf("remainder: %lu\n", remainder);
         idx++;
     }
-
-    printf("candidate: %s\n", pwd_candidate);
 
     d_strcpy(pwd_candidate, output);
 }
@@ -128,11 +123,11 @@ crackPassword(
 
     while (!g_found) {
         d_ulong_to_char_array(search_pos, l_search_space_size, temp_password);
-        printf("temp pwd: %s\n", temp_password);
+
         d_encrypt(temp_password, s_encryption_key, key_length, temp_encrypted_password);
-        printf("temp enc pwd: %s\n", temp_encrypted_password);
+
         i_found = d_strcmp(temp_encrypted_password, s_encrypted_password) == 0;
-        printf("i found: %d\n", i_found);
+
         if (i_found) {
             g_found = 1;
         }
@@ -140,7 +135,6 @@ crackPassword(
     }
 
     if (i_found) {
-        printf("found!!!\n");
         d_strcpy(temp_password, g_decrypted_password);
     }
 }
