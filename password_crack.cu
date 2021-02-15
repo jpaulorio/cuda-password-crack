@@ -52,12 +52,14 @@ __device__ void d_strcpy (char *origin, char *destination) {
 }
 
 __device__ void d_encrypt(char *uncrypted, char *encryption_key, int key_length, char *encrypted) {
-    for (uint i = 0; *uncrypted != 0; ++i, ++uncrypted, ++encrypted) {
-        if (*uncrypted != 0) {
+    char *tmp_uncrypted = uncrypted;
+    char *tmp_encrypted = encrypted;
+    for (uint i = 0; *tmp_uncrypted != 0; ++i, ++tmp_uncrypted, ++tmp_encrypted) {
+        if (*tmp_uncrypted != 0) {
             uint key_index = i % key_length;
-            *encrypted = (*uncrypted + encryption_key[key_index]) % 128;
+            *tmp_encrypted = (*tmp_uncrypted + encryption_key[key_index]) % 128;
         } else {
-            *encrypted = 0;
+            *tmp_encrypted = 0;
         }
     }
 }
