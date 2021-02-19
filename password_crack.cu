@@ -145,20 +145,20 @@ crackPassword(
 
         d_encrypt(temp_password, s_encryption_key, key_length, temp_encrypted_password);
 
-        if (search_pos == 12583009) {
-            for (int i =0; i < 7; i++)
-                printf("DEBUG: tmp pwd %d: %d\n", i, temp_password[i]);
-            for (int i =0; i < 7; i++)
-                printf("DEBUG: enc pwd %d: %d\n", i, s_encrypted_password[i]);
-            for (int i =0; i < 7; i++)
-                printf("DEBUG: tmp enc pwd %d: %d\n", i, temp_encrypted_password[i]);
-            printf("COMP: %d\n", d_strcmp(temp_encrypted_password, s_encrypted_password));
-        }
+        // if (search_pos == 12583009) {
+        //     for (int i =0; i < 7; i++)
+        //         printf("DEBUG: tmp pwd %d: %d\n", i, temp_password[i]);
+        //     for (int i =0; i < 7; i++)
+        //         printf("DEBUG: enc pwd %d: %d\n", i, s_encrypted_password[i]);
+        //     for (int i =0; i < 7; i++)
+        //         printf("DEBUG: tmp enc pwd %d: %d\n", i, temp_encrypted_password[i]);
+        //     printf("COMP: %d\n", d_strcmp(temp_encrypted_password, s_encrypted_password));
+        // }
 
         if (d_strcmp(temp_encrypted_password, s_encrypted_password) == 0) {
             d_strcpy(temp_password, g_decrypted_password);
             // printf("Thread %d found it! [%s] Block id:Thread is - %d:%d\n", global_tid, temp_password, bid, tid);
-            printf("Thread %d start:end:current - %lu:%lu:%lu\n", global_tid, start_search, end_search, search_pos);
+            // printf("Thread %d start:end:current - %lu:%lu:%lu\n", global_tid, start_search, end_search, search_pos);
             g_found = 1;
         }
 
@@ -211,16 +211,18 @@ runTest(int argc, char **argv)
     
     checkCudaErrors(cudaMemcpy(d_encrypted_password, encrypted_password, pwd_mem_size, cudaMemcpyHostToDevice));
     checkCudaErrors(cudaMemcpy(d_encryption_key, encryption_key, key_mem_size, cudaMemcpyHostToDevice));
+    cudaStreamQuery(0);
 
     // setup execution parameters
     unsigned int num_threads = 512;
-    unsigned int num_blocks = 512;
+    unsigned int num_blocks = pow(2,20);
     dim3  grid(num_blocks, 1, 1);
     dim3  threads(num_threads, 1, 1);
 
     cudaEventRecord(start);
     // execute the kernel
     crackPassword<<<grid, threads>>>(pwd_size, d_encrypted_password, d_decrypted_password, key_size, d_encryption_key, search_space_size, 0);
+    cudaStreamQuery(0);
     cudaEventRecord(stop);
 
     // check if kernel execution generated and error
@@ -232,7 +234,7 @@ runTest(int argc, char **argv)
     char *decrypted_password = (char *) malloc(pwd_mem_size);
     // copy result from device to host
     checkCudaErrors(cudaMemcpy(decrypted_password, d_decrypted_password, pwd_mem_size, cudaMemcpyDeviceToHost));
-
+    
     cudaEventSynchronize(stop);
     float milliseconds = 0;
     cudaEventElapsedTime(&milliseconds, start, stop);
