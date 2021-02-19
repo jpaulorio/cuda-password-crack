@@ -41,63 +41,53 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 // declaration, forward
 void runTest(int argc, char **argv);
 
-__device__ int d_strcmp (char *s1, char *s2) {
-    char *tmp_s1 = s1;
-    char *tmp_s2 = s2;
-    for(; *tmp_s1 == *tmp_s2; ++tmp_s1, ++tmp_s2) {
-        if(*tmp_s1 == 0)
-            return 0;
+__device__ void fill_with_zeros(char *array, uint array_lenght) {
+    for (int i=0; i < array_lenght; i++) {
+        array[i] = 0;
     }
-    return *(unsigned char *)tmp_s1 < *(unsigned char *)tmp_s2 ? -1 : 1;
+}
+
+__device__ int d_strcmp (char *s1, char *s2) {
+    for(int i=0; i < 7; i++) {
+        if(s1[i] != s2[i])
+            return 1;
+    }
+    return 0;
 }
 
 __device__ void d_strcpy (char *origin, char *destination) {
-    char *tmp = origin;
-    int idx = 0;
-    for (; *tmp != 0; ++idx, ++tmp) {
-        destination[idx] = *tmp;
+    for (int i=0; i < 7; i++) {
+        destination[i] = origin[i];
     }
-    destination[idx] = 0;
 }
 
 __device__ void d_encrypt(char *uncrypted, char *encryption_key, int key_length, char *encrypted) {
-    char *tmp_uncrypted = uncrypted;
-    char *tmp_encrypted = encrypted;
-    for (uint i = 0; *tmp_uncrypted != 0; ++i, ++tmp_uncrypted, ++tmp_encrypted) {
-        if (*tmp_uncrypted != 0) {
-            uint key_index = i % key_length;
-            *tmp_encrypted = (*tmp_uncrypted + encryption_key[key_index]) % 128;
-        } else {
-            *tmp_encrypted = 0;
+    fill_with_zeros(encrypted, 7);
+    for (int i = 0; i < 7; i++) {
+        int key_index = i % key_length;
+        if (uncrypted[i] > 0) {
+            encrypted[i] = (uncrypted[i] + encryption_key[key_index]) % 128;
         }
     }
-}
-
-__device__ void fill_with_zeros(char *array) {
-    int array_lenght = sizeof(array);
-    for (int i=0; i < array_lenght - 1; i++) {
-        array[i] = 0;
-    }
-    array[array_lenght - 1] = 0;
 }
 
 __device__ void d_ulong_to_char_array(unsigned long search_pos, char *output) {
     const uint total_no_ascii_chars = 128;
     char pwd_candidate[7];
-    fill_with_zeros(pwd_candidate);
+    fill_with_zeros(pwd_candidate, 7);
 
-    unsigned int integer_part = search_pos / total_no_ascii_chars;
-    unsigned int remainder = search_pos % total_no_ascii_chars;
+    unsigned long integer_part = search_pos / total_no_ascii_chars;
+    unsigned long remainder = search_pos % total_no_ascii_chars;
     uint idx = 0;
     pwd_candidate[idx] = remainder;
     pwd_candidate[idx + 1] = integer_part;
 
     while (integer_part > 0) {
+        idx++;
+        remainder = integer_part % total_no_ascii_chars;
+        integer_part = integer_part / total_no_ascii_chars;
         pwd_candidate[idx] = remainder;
         pwd_candidate[idx + 1] = integer_part;
-        integer_part = integer_part / total_no_ascii_chars;
-        remainder = integer_part % total_no_ascii_chars;
-        idx++;
     }
 
     d_strcpy(pwd_candidate, output);
@@ -110,7 +100,7 @@ crackPassword(
     unsigned long g_search_space_size, int g_found)
 {
     __shared__ char s_encrypted_password[7];
-    __shared__ char s_encryption_key[4];
+    char s_encryption_key[4];
     char temp_password[7];
     char temp_encrypted_password[7];
     
@@ -121,21 +111,32 @@ crackPassword(
     const unsigned int global_num_threads = gridDim.x * blockDim.x;
 
     const unsigned long l_search_space_size = g_search_space_size;
-    const unsigned long chunk_size = l_search_space_size / global_num_threads;
+    unsigned long chunk_size = l_search_space_size / global_num_threads;
+
+    if (chunk_size == 0) {
+        chunk_size = l_search_space_size / num_threads;
+
+        if (chunk_size == 0) {
+            chunk_size = l_search_space_size;
+        }
+    }
+
     const unsigned long start_search = global_tid * chunk_size;
     const unsigned long end_search = start_search + chunk_size;
     const int key_length = g_encryption_key_length;
     unsigned long search_pos = start_search;
-    unsigned int i_found = g_found;
-
     
+    fill_with_zeros(s_encryption_key, 4);
+    d_strcpy(g_encryption_key, s_encryption_key);
+
     if (tid == 0) {
+        fill_with_zeros(s_encrypted_password, 7);
+        d_strcpy(g_encrypted_password, s_encrypted_password);    
+
         if (bid == 0) {
             printf("Global num threads: %d\n", global_num_threads);
             printf("Chunk size: %lu\n", chunk_size);
         }
-        d_strcpy(g_encrypted_password, s_encrypted_password);
-        d_strcpy(g_encryption_key, s_encryption_key);
     }
     __syncthreads();
 
@@ -144,18 +145,24 @@ crackPassword(
 
         d_encrypt(temp_password, s_encryption_key, key_length, temp_encrypted_password);
 
-        i_found = d_strcmp(temp_encrypted_password, s_encrypted_password) == 0;
-
-        if (i_found) {
-            g_found = 1;
-            // printf("Thread %d found it! [%s] Block id:Thread is - %d:%d\n", global_tid, temp_password, bid, tid);
-            // printf("Thread %d start:end:current - %lu:%lu:%lu\n", global_tid, start_search, end_search, search_pos);
+        if (search_pos == 12583009) {
+            for (int i =0; i < 7; i++)
+                printf("DEBUG: tmp pwd %d: %d\n", i, temp_password[i]);
+            for (int i =0; i < 7; i++)
+                printf("DEBUG: enc pwd %d: %d\n", i, s_encrypted_password[i]);
+            for (int i =0; i < 7; i++)
+                printf("DEBUG: tmp enc pwd %d: %d\n", i, temp_encrypted_password[i]);
+            printf("COMP: %d\n", d_strcmp(temp_encrypted_password, s_encrypted_password));
         }
-        search_pos++;
-    }
 
-    if (i_found) {
-        d_strcpy(temp_password, g_decrypted_password);
+        if (d_strcmp(temp_encrypted_password, s_encrypted_password) == 0) {
+            d_strcpy(temp_password, g_decrypted_password);
+            // printf("Thread %d found it! [%s] Block id:Thread is - %d:%d\n", global_tid, temp_password, bid, tid);
+            printf("Thread %d start:end:current - %lu:%lu:%lu\n", global_tid, start_search, end_search, search_pos);
+            g_found = 1;
+        }
+
+        search_pos++;
     }
 }
 
