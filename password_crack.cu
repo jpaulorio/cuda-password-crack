@@ -122,7 +122,13 @@ crackPassword(
     }
 
     const unsigned long start_search = global_tid * chunk_size;
-    const unsigned long end_search = start_search + chunk_size;
+    unsigned long end_search = start_search + chunk_size;
+    if (start_search > l_search_space_size) {
+        return;
+    }
+    if (end_search > l_search_space_size) {
+        end_search = l_search_space_size;
+    }
     const int key_length = g_encryption_key_length;
     unsigned long search_pos = start_search;
     
@@ -187,9 +193,9 @@ runTest(int argc, char **argv)
     char encrypted_password[pwd_max_size];
     char encryption_key[key_max_size];
     printf("Enter the encrypted password:\n");
-    scanf("%32s", encrypted_password);
+    scanf("%6s", encrypted_password);
     printf("Enter the encryption key:\n");
-    scanf("%32s", encryption_key);
+    scanf("%4s", encryption_key);
     
     uint pwd_size = strlen(encrypted_password);
     uint key_size = strlen(encryption_key);
@@ -215,7 +221,7 @@ runTest(int argc, char **argv)
 
     // setup execution parameters
     unsigned int num_threads = 512;
-    unsigned int num_blocks = pow(2,20);
+    unsigned int num_blocks = pow(2,21);
     dim3  grid(num_blocks, 1, 1);
     dim3  threads(num_threads, 1, 1);
 
