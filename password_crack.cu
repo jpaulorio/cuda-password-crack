@@ -91,10 +91,12 @@ __device__ void d_encrypt(uint input, uint encryption_key, char *encrypted) {
     d_ulong_to_char_array(tmp_pwd, encrypted);
 }
 
+__device__ int g_found = 0;
+
 __global__ void
 crackPassword(
     int g_encrypted_password_length, char *g_encrypted_password, char *g_decrypted_password,
-    unsigned long g_search_space_size, int g_found)
+    unsigned long g_search_space_size)
 {
     __shared__ char s_encrypted_password[7];
 
@@ -152,24 +154,22 @@ crackPassword(
     __syncthreads();
 
     while (!g_found && search_pos < end_search) {
-        ulong key_search_pos = 0;        
+        uint key_search_pos = 0;        
 
         while (!g_found && key_search_pos < key_list_size) {
+            uint key = encryption_keys[key_search_pos];
 
-            d_encrypt(search_pos, encryption_keys[key_search_pos], temp_encrypted_password);
+            d_encrypt(search_pos, key, temp_encrypted_password);
 
             if (d_strcmp(temp_encrypted_password, s_encrypted_password) == 0) {
                 d_ulong_to_char_array(search_pos, temp_password);
                 d_strcpy(temp_password, g_decrypted_password);
-
-                printf("Thread %d start:end:current - %lu:%lu:%lu\n", global_tid, start_search, end_search, search_pos);
-
+                printf("Password was found by thread %d!\nDetails: start|end|current - %lu:%lu:%lu\n",
+                    global_tid, start_search, end_search, search_pos);
                 g_found = 1;
             }
-
             key_search_pos++;
         }
-
         search_pos++;
     }
 }
@@ -200,8 +200,7 @@ runTest(int argc, char **argv)
     uint key_size = strlen(encryption_key);
     
     unsigned int pwd_mem_size = (pwd_size + 1) * sizeof(char);
-    unsigned long search_space_size = pow(total_no_ascii_chars, 1);
-    // unsigned long search_space_size = pow(total_no_ascii_chars, pwd_size);
+    unsigned long search_space_size = pow(total_no_ascii_chars, 5);
     printf("Search space size: %lu\n", search_space_size);
 
     cudaEvent_t start, stop;
@@ -219,16 +218,18 @@ runTest(int argc, char **argv)
     // setup execution parameters
     unsigned int num_threads = 512;
     unsigned int num_blocks = 1;
-    if (search_space_size > num_blocks * num_threads) {
+    unsigned long max_num_threads = pow(2,21);
+    while (search_space_size > num_blocks * num_threads && num_blocks * num_threads < max_num_threads) {
         num_blocks++;
     }
+    printf("Launching %d threads...\n", num_blocks * num_threads);
     // unsigned int num_blocks = pow(2,21);
     dim3  grid(num_blocks, 1, 1);
     dim3  threads(num_threads, 1, 1);
 
     cudaEventRecord(start);
     // execute the kernel
-    crackPassword<<<grid, threads>>>(pwd_size, d_encrypted_password, d_decrypted_password, search_space_size, 0);
+    crackPassword<<<grid, threads>>>(pwd_size, d_encrypted_password, d_decrypted_password, search_space_size);
     cudaStreamQuery(0);
     cudaEventRecord(stop);
 
