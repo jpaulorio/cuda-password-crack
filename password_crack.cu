@@ -96,7 +96,7 @@ __device__ int g_found = 0;
 __global__ void
 crackPassword(
     int g_encrypted_password_length, char *g_encrypted_password, char *g_decrypted_password,
-    unsigned long g_search_space_size)
+    unsigned long g_search_space_size, uint pageDim, uint pageId)
 {
     __shared__ char s_encrypted_password[7];
 
@@ -106,8 +106,8 @@ crackPassword(
     const unsigned int tid = threadIdx.x;
     const unsigned int bid = blockIdx.x;
     const unsigned int num_threads = blockDim.x;
-    const unsigned int global_tid = bid * num_threads + tid;
-    const unsigned int global_num_threads = gridDim.x * blockDim.x;
+    const unsigned int global_tid = (pageId * gridDim.x * blockDim.x) + (bid * num_threads) + tid;
+    const unsigned int global_num_threads = pageDim * gridDim.x * blockDim.x;
     uint key_list_size = 90;
     const uint encryption_keys[] = {
         31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
@@ -216,40 +216,48 @@ runTest(int argc, char **argv)
     cudaStreamQuery(0);
 
     // setup execution parameters
-    unsigned int num_threads = 512;
-    unsigned int num_blocks = 1;
-    unsigned long max_num_threads = pow(2,21);
-    while (search_space_size > num_blocks * num_threads && num_blocks * num_threads < max_num_threads) {
+    const uint pageCount = 1024;
+    const uint num_threads = 512;
+    uint num_blocks = 1;
+    const unsigned long max_num_threads = pow(2,21);
+    while (search_space_size > num_blocks * num_threads * pageCount
+        && num_blocks * num_threads * pageCount < max_num_threads) {
         num_blocks++;
     }
-    printf("Launching %d threads...\n", num_blocks * num_threads);
-    // unsigned int num_blocks = pow(2,21);
+    
+    printf("Launching %d threads...\n", num_blocks * num_threads * pageCount);
+    
     dim3  grid(num_blocks, 1, 1);
     dim3  threads(num_threads, 1, 1);
 
-    cudaEventRecord(start);
-    // execute the kernel
-    crackPassword<<<grid, threads>>>(pwd_size, d_encrypted_password, d_decrypted_password, search_space_size);
-    cudaStreamQuery(0);
-    cudaEventRecord(stop);
-
-    // check if kernel execution generated and error
-    getLastCudaError("Kernel execution failed");
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
-
     // allocate mem for the result on host side
     char *decrypted_password = (char *) malloc(pwd_mem_size);
-    // copy result from device to host
-    checkCudaErrors(cudaMemcpy(decrypted_password, d_decrypted_password, pwd_mem_size, cudaMemcpyDeviceToHost));
+
+    // execute the kernel
+    for (int i=0; i < pageCount; i++) {
+        printf("Iteration %d\n", i);
+        cudaEventRecord(start);
+        crackPassword<<<grid, threads>>>(pwd_size, d_encrypted_password, d_decrypted_password, search_space_size, pageCount, i);
+        cudaStreamQuery(0);
     
-    cudaEventSynchronize(stop);
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
+        cudaEventRecord(stop);
 
-    printf("Decrypted password: %s \n", decrypted_password);
+        // check if kernel execution generated and error
+        getLastCudaError("Kernel execution failed");
+        gpuErrchk(cudaPeekAtLastError());
+        gpuErrchk(cudaDeviceSynchronize());
 
-    printf("Processing time: %f (ms)\n", milliseconds);
+        // copy result from device to host
+        checkCudaErrors(cudaMemcpy(decrypted_password, d_decrypted_password, pwd_mem_size, cudaMemcpyDeviceToHost));
+        
+        cudaEventSynchronize(stop);
+        float milliseconds = 0;
+        cudaEventElapsedTime(&milliseconds, start, stop);
+
+        printf("Decrypted password: %s \n", decrypted_password);
+
+        printf("Processing time: %f (ms)\n", milliseconds);
+    }
 
     // cleanup memory
     free(decrypted_password);
