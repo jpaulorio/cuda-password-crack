@@ -95,11 +95,10 @@ __device__ int g_found = 0;
 
 __global__ void
 crackPassword(
-    int g_encrypted_password_length, char *g_encrypted_password, char *g_decrypted_password,
+    char *g_encrypted_password, char *g_decrypted_password,
     unsigned long g_search_space_size, uint pageDim, uint pageId)
 {
-    __shared__ char s_encrypted_password[256];
-
+    char encrypted_password[256];
     char temp_password[256];
     char temp_encrypted_password[256];
     
@@ -142,11 +141,8 @@ crackPassword(
     }
     unsigned long search_pos = start_search;
 
-    if (tid == 0) {
-        fill_with_zeros(s_encrypted_password, 256);
-        d_strcpy(g_encrypted_password, s_encrypted_password, 7);
-    }
-    __syncthreads();
+    fill_with_zeros(encrypted_password, 256);
+    d_strcpy(g_encrypted_password, encrypted_password, 7);
 
     while (!g_found && search_pos < end_search) {
         uint key_search_pos = 0;        
@@ -156,7 +152,7 @@ crackPassword(
 
             d_encrypt(search_pos, key, temp_encrypted_password);
 
-            if (d_strcmp(temp_encrypted_password, s_encrypted_password, 256) == 0) {
+            if (d_strcmp(temp_encrypted_password, encrypted_password, 256) == 0) {
                 d_ulong_to_char_array(search_pos, temp_password);
                 d_strcpy(temp_password, g_decrypted_password, 7);
                 printf("Password %s was found by thread %d!\nDetails: start|end|current - %lu:%lu:%lu\n",
@@ -231,12 +227,12 @@ runTest(int argc, char **argv)
     for (int i=0; i < pageCount; i++) {
         printf("Iteration %d\n", i);
         cudaEventRecord(start);
-        crackPassword<<<grid, threads>>>(pwd_size, d_encrypted_password, d_decrypted_password, search_space_size, pageCount, i);
+        crackPassword<<<grid, threads>>>(d_encrypted_password, d_decrypted_password, search_space_size, pageCount, i);
         cudaStreamQuery(0);
     
         cudaEventRecord(stop);
 
-        // check if kernel execution generated and error
+        // check if kernel execution generated an error
         getLastCudaError("Kernel execution failed");
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
