@@ -49,16 +49,16 @@ __device__ void fill_with_zeros(char *array, uint array_lenght) {
     }
 }
 
-__device__ int d_strcmp (char *s1, char *s2) {
-    for(int i=0; i < 7; i++) {
+__device__ int d_strcmp (char *s1, char *s2, uint size) {
+    for(int i=0; i < size; i++) {
         if(s1[i] != s2[i])
             return 1;
     }
     return 0;
 }
 
-__device__ void d_strcpy (char *origin, char *destination) {
-    for (int i=0; i < 7; i++) {
+__device__ void d_strcpy (char *origin, char *destination, uint size) {
+    for (int i=0; i < size; i++) {
         destination[i] = origin[i];
     }
 }
@@ -82,12 +82,12 @@ __device__ void d_ulong_to_char_array(unsigned long search_pos, char *output) {
     }
     pwd_candidate[idx + 1] = 0;
 
-    d_strcpy(pwd_candidate, output);
+    d_strcpy(pwd_candidate, output, 256);
 }
 
-__device__ void d_encrypt(uint input, uint encryption_key, char *encrypted) {
+__device__ void d_encrypt(unsigned long input, uint encryption_key, char *encrypted) {
     fill_with_zeros(encrypted, 256);
-    ulong tmp_pwd = input * encryption_key;
+    unsigned long tmp_pwd = input * encryption_key;
     d_ulong_to_char_array(tmp_pwd, encrypted);
 }
 
@@ -98,9 +98,9 @@ crackPassword(
     int g_encrypted_password_length, char *g_encrypted_password, char *g_decrypted_password,
     unsigned long g_search_space_size, uint pageDim, uint pageId)
 {
-    __shared__ char s_encrypted_password[7];
+    __shared__ char s_encrypted_password[256];
 
-    char temp_password[7];
+    char temp_password[256];
     char temp_encrypted_password[256];
     
     const unsigned int tid = threadIdx.x;
@@ -143,13 +143,8 @@ crackPassword(
     unsigned long search_pos = start_search;
 
     if (tid == 0) {
-        fill_with_zeros(s_encrypted_password, 7);
-        d_strcpy(g_encrypted_password, s_encrypted_password);
-
-        if (bid == 0) {
-            printf("Global num threads: %d\n", global_num_threads);
-            printf("Chunk size: %lu\n", chunk_size);
-        }
+        fill_with_zeros(s_encrypted_password, 256);
+        d_strcpy(g_encrypted_password, s_encrypted_password, 7);
     }
     __syncthreads();
 
@@ -161,11 +156,11 @@ crackPassword(
 
             d_encrypt(search_pos, key, temp_encrypted_password);
 
-            if (d_strcmp(temp_encrypted_password, s_encrypted_password) == 0) {
+            if (d_strcmp(temp_encrypted_password, s_encrypted_password, 256) == 0) {
                 d_ulong_to_char_array(search_pos, temp_password);
-                d_strcpy(temp_password, g_decrypted_password);
-                printf("Password was found by thread %d!\nDetails: start|end|current - %lu:%lu:%lu\n",
-                    global_tid, start_search, end_search, search_pos);
+                d_strcpy(temp_password, g_decrypted_password, 7);
+                printf("Password %s was found by thread %d!\nDetails: start|end|current - %lu:%lu:%lu\n",
+                    temp_password, global_tid, start_search, end_search, search_pos);
                 g_found = 1;
             }
             key_search_pos++;
@@ -219,12 +214,11 @@ runTest(int argc, char **argv)
     const uint pageCount = 1024;
     const uint num_threads = 512;
     uint num_blocks = 1;
-    const unsigned long max_num_threads = pow(2,21);
+    const unsigned long max_num_threads = pow(2,23);
     while (search_space_size > num_blocks * num_threads * pageCount
         && num_blocks * num_threads * pageCount < max_num_threads) {
         num_blocks++;
     }
-    
     printf("Launching %d threads...\n", num_blocks * num_threads * pageCount);
     
     dim3  grid(num_blocks, 1, 1);
@@ -254,8 +248,10 @@ runTest(int argc, char **argv)
         float milliseconds = 0;
         cudaEventElapsedTime(&milliseconds, start, stop);
 
-        printf("Decrypted password: %s \n", decrypted_password);
-
+        if (strcmp(decrypted_password, "") != 0) {
+            printf("Decrypted password: %s \n", decrypted_password);
+            break;
+        }
         printf("Processing time: %f (ms)\n", milliseconds);
     }
 
