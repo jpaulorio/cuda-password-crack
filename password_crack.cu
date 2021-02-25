@@ -96,14 +96,14 @@ __device__ int g_found = 0;
 __global__ void
 crackPassword(
     char *g_encrypted_password, char *g_decrypted_password,
-    unsigned long g_search_space_size, unsigned long pageDim, uint pageId)
+    unsigned long g_search_space_size, unsigned long pageDim, unsigned long pageId)
 {
     char encrypted_password[256];
     char temp_password[256];
     char temp_encrypted_password[256];
     
-    const unsigned int tid = threadIdx.x;
-    const unsigned int bid = blockIdx.x;
+    const unsigned long tid = threadIdx.x;
+    const unsigned long bid = blockIdx.x;
     const unsigned int num_threads = blockDim.x;
     const unsigned long global_tid = (pageId * gridDim.x * blockDim.x) + (bid * num_threads) + tid;
     const unsigned long global_num_threads = pageDim * gridDim.x * blockDim.x;
@@ -139,7 +139,6 @@ crackPassword(
         if (d_strcmp(temp_encrypted_password, encrypted_password, 256) == 0) {
             d_ulong_to_char_array(global_tid, temp_password);
             d_strcpy(temp_password, g_decrypted_password, 7);
-            // printf("Password %s was found by thread %lu !\n", temp_password, global_tid);
             g_found = 1;
         }
         key_search_pos++;
@@ -166,7 +165,7 @@ runTest(int argc, char **argv)
     char encrypted_password[pwd_max_size];
     char encryption_key[key_max_size];
     printf("Enter the encrypted password:\n");
-    scanf("%6s", encrypted_password);
+    scanf("%7s", encrypted_password);
     
     uint pwd_size = strlen(encrypted_password);
     uint key_size = strlen(encryption_key);
@@ -208,7 +207,7 @@ runTest(int argc, char **argv)
 
     // execute the kernel
     float totalTime = 0;
-    for (int i=0; i < numberIterations; i++) {
+    for (uint i=0; i < numberIterations; i++) {
         // printf("Iteration %d\n", i);
         cudaEventRecord(start);
         crackPassword<<<grid, threads>>>(d_encrypted_password, d_decrypted_password, search_space_size, numberIterations, i);
