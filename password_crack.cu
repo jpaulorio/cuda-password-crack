@@ -120,8 +120,7 @@ crackPassword(
         467, 479, 487, 491, 499, 503, 509, 521, 523, 541
     };
 
-    const unsigned long l_search_space_size = g_search_space_size;
-    unsigned long chunk_size = l_search_space_size / global_num_threads;
+    unsigned long chunk_size = g_search_space_size / global_num_threads;
 
     if (chunk_size == 0) {
         chunk_size = 1;
@@ -137,7 +136,7 @@ crackPassword(
     fill_with_zeros(encrypted_password, 256);
     d_strcpy(g_encrypted_password, encrypted_password, 7);
 
-    uint key_search_pos = global_tid;        
+    uint key_search_pos = 0;        
 
     while (!g_found && key_search_pos < key_list_size) {
         uint key = encryption_keys[key_search_pos];
@@ -207,8 +206,10 @@ runTest(int argc, char **argv)
         && num_blocks * num_threads * pageCount < max_num_threads) {
         num_blocks++;
     }
-    printf("Launching %lu blocks...\n", num_blocks * pageCount);
-    printf("Launching %lu threads...\n", num_blocks * num_threads * pageCount);
+    printf("Launching %lu pages...\n", pageCount);
+    printf("Launching %d blocks per page...\n", num_blocks);
+    printf("Launching %d threads per block...\n", num_threads);
+    printf("Launching %lu total threads...\n", num_blocks * num_threads * pageCount);
 
     dim3  grid(num_blocks, 1, 1);
     dim3  threads(num_threads, 1, 1);
