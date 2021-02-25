@@ -96,7 +96,7 @@ __device__ int g_found = 0;
 __global__ void
 crackPassword(
     char *g_encrypted_password, char *g_decrypted_password,
-    unsigned long g_search_space_size, uint pageDim, uint pageId)
+    unsigned long g_search_space_size, unsigned long pageDim, uint pageId)
 {
     char encrypted_password[256];
     char temp_password[256];
@@ -105,8 +105,8 @@ crackPassword(
     const unsigned int tid = threadIdx.x;
     const unsigned int bid = blockIdx.x;
     const unsigned int num_threads = blockDim.x;
-    const unsigned int global_tid = (pageId * gridDim.x * blockDim.x) + (bid * num_threads) + tid;
-    const unsigned int global_num_threads = pageDim * gridDim.x * blockDim.x;
+    const unsigned long global_tid = (pageId * gridDim.x * blockDim.x) + (bid * num_threads) + tid;
+    const unsigned long global_num_threads = pageDim * gridDim.x * blockDim.x;
     uint key_list_size = 90;
     const uint encryption_keys[] = {
         31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
@@ -124,44 +124,36 @@ crackPassword(
     unsigned long chunk_size = l_search_space_size / global_num_threads;
 
     if (chunk_size == 0) {
-        chunk_size = l_search_space_size / num_threads;
-
-        if (chunk_size == 0) {
-            chunk_size = l_search_space_size;
-        }
+        chunk_size = 1;
     }
 
-    const unsigned long start_search = global_tid * chunk_size;
-    unsigned long end_search = start_search + chunk_size;
-    if (start_search >= l_search_space_size) {
-        return;
+    if (global_tid == 0) {
+        printf("Chunk size: %lu\n", chunk_size);
+        printf("Global num threads: %lu\n", global_num_threads);
     }
-    if (end_search > l_search_space_size) {
-        end_search = l_search_space_size;
-    }
-    unsigned long search_pos = start_search;
+
+    unsigned long search_pos = global_tid;
 
     fill_with_zeros(encrypted_password, 256);
     d_strcpy(g_encrypted_password, encrypted_password, 7);
 
-    while (!g_found && search_pos < end_search) {
-        uint key_search_pos = 0;        
+    uint key_search_pos = global_tid;        
 
-        while (!g_found && key_search_pos < key_list_size) {
-            uint key = encryption_keys[key_search_pos];
+    while (!g_found && key_search_pos < key_list_size) {
+        uint key = encryption_keys[key_search_pos];
 
-            d_encrypt(search_pos, key, temp_encrypted_password);
-
-            if (d_strcmp(temp_encrypted_password, encrypted_password, 256) == 0) {
-                d_ulong_to_char_array(search_pos, temp_password);
-                d_strcpy(temp_password, g_decrypted_password, 7);
-                printf("Password %s was found by thread %d!\nDetails: start|end|current - %lu:%lu:%lu\n",
-                    temp_password, global_tid, start_search, end_search, search_pos);
-                g_found = 1;
-            }
-            key_search_pos++;
+        d_encrypt(search_pos, key, temp_encrypted_password);
+        if (search_pos == 6240) {
+            printf("DEBUG: %s\n", temp_encrypted_password);
         }
-        search_pos++;
+        if (d_strcmp(temp_encrypted_password, encrypted_password, 256) == 0) {
+            d_ulong_to_char_array(search_pos, temp_password);
+            d_strcpy(temp_password, g_decrypted_password, 7);
+            printf("Password %s was found by thread %d!\nDetails: search pos - %lu\n",
+                temp_password, global_tid, search_pos);
+            g_found = 1;
+        }
+        key_search_pos++;
     }
 }
 
@@ -207,16 +199,17 @@ runTest(int argc, char **argv)
     cudaStreamQuery(0);
 
     // setup execution parameters
-    const uint pageCount = 1024;
+    const unsigned long pageCount = pow(2,10);
     const uint num_threads = 512;
     uint num_blocks = 1;
-    const unsigned long max_num_threads = pow(2,23);
+    const unsigned long max_num_threads = pow(2,33);
     while (search_space_size > num_blocks * num_threads * pageCount
         && num_blocks * num_threads * pageCount < max_num_threads) {
         num_blocks++;
     }
-    printf("Launching %d threads...\n", num_blocks * num_threads * pageCount);
-    
+    printf("Launching %lu blocks...\n", num_blocks * pageCount);
+    printf("Launching %lu threads...\n", num_blocks * num_threads * pageCount);
+
     dim3  grid(num_blocks, 1, 1);
     dim3  threads(num_threads, 1, 1);
 
