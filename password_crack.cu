@@ -187,7 +187,7 @@ runTest(int argc, char **argv)
 
     // setup execution parameters
     const unsigned long numberIterations = pow(2,8);
-    const uint num_threads = 512;
+    const uint num_threads = pow(2,8);
     uint num_blocks = 1;
     const unsigned long max_num_threads = pow(2,33);
     while (search_space_size > num_blocks * num_threads * numberIterations
