@@ -126,13 +126,6 @@ crackPassword(
         chunk_size = 1;
     }
 
-    if (global_tid == 0) {
-        printf("Chunk size: %lu\n", chunk_size);
-        printf("Global num threads: %lu\n", global_num_threads);
-    }
-
-    unsigned long search_pos = global_tid;
-
     fill_with_zeros(encrypted_password, 256);
     d_strcpy(g_encrypted_password, encrypted_password, 7);
 
@@ -141,15 +134,12 @@ crackPassword(
     while (!g_found && key_search_pos < key_list_size) {
         uint key = encryption_keys[key_search_pos];
 
-        d_encrypt(search_pos, key, temp_encrypted_password);
-        if (search_pos == 6240) {
-            printf("DEBUG: %s\n", temp_encrypted_password);
-        }
+        d_encrypt(global_tid, key, temp_encrypted_password);
+
         if (d_strcmp(temp_encrypted_password, encrypted_password, 256) == 0) {
-            d_ulong_to_char_array(search_pos, temp_password);
+            d_ulong_to_char_array(global_tid, temp_password);
             d_strcpy(temp_password, g_decrypted_password, 7);
-            printf("Password %s was found by thread %d!\nDetails: search pos - %lu\n",
-                temp_password, global_tid, search_pos);
+            // printf("Password %s was found by thread %lu !\n", temp_password, global_tid);
             g_found = 1;
         }
         key_search_pos++;
@@ -193,23 +183,22 @@ runTest(int argc, char **argv)
     checkCudaErrors(cudaMalloc((void **) &d_encrypted_password, pwd_mem_size));
     //output
     checkCudaErrors(cudaMalloc((void **) &d_decrypted_password, pwd_mem_size));
-    
+    //copy input to device
     checkCudaErrors(cudaMemcpy(d_encrypted_password, encrypted_password, pwd_mem_size, cudaMemcpyHostToDevice));
-    cudaStreamQuery(0);
 
     // setup execution parameters
-    const unsigned long pageCount = pow(2,10);
+    const unsigned long numberIterations = pow(2,8);
     const uint num_threads = 512;
     uint num_blocks = 1;
     const unsigned long max_num_threads = pow(2,33);
-    while (search_space_size > num_blocks * num_threads * pageCount
-        && num_blocks * num_threads * pageCount < max_num_threads) {
+    while (search_space_size > num_blocks * num_threads * numberIterations
+        && num_blocks * num_threads * numberIterations < max_num_threads) {
         num_blocks++;
     }
-    printf("Launching %lu pages...\n", pageCount);
-    printf("Launching %d blocks per page...\n", num_blocks);
+    printf("Launching %lu iterations...\n", numberIterations);
+    printf("Launching %d blocks per iteration...\n", num_blocks);
     printf("Launching %d threads per block...\n", num_threads);
-    printf("Launching %lu total threads...\n", num_blocks * num_threads * pageCount);
+    printf("Launching %lu total threads...\n", num_blocks * num_threads * numberIterations);
 
     dim3  grid(num_blocks, 1, 1);
     dim3  threads(num_threads, 1, 1);
@@ -218,11 +207,11 @@ runTest(int argc, char **argv)
     char *decrypted_password = (char *) malloc(pwd_mem_size);
 
     // execute the kernel
-    for (int i=0; i < pageCount; i++) {
-        printf("Iteration %d\n", i);
+    float totalTime = 0;
+    for (int i=0; i < numberIterations; i++) {
+        // printf("Iteration %d\n", i);
         cudaEventRecord(start);
-        crackPassword<<<grid, threads>>>(d_encrypted_password, d_decrypted_password, search_space_size, pageCount, i);
-        cudaStreamQuery(0);
+        crackPassword<<<grid, threads>>>(d_encrypted_password, d_decrypted_password, search_space_size, numberIterations, i);
     
         cudaEventRecord(stop);
 
@@ -237,13 +226,14 @@ runTest(int argc, char **argv)
         cudaEventSynchronize(stop);
         float milliseconds = 0;
         cudaEventElapsedTime(&milliseconds, start, stop);
+        totalTime += milliseconds;
 
         if (strcmp(decrypted_password, "") != 0) {
             printf("Decrypted password: %s \n", decrypted_password);
             break;
         }
-        printf("Processing time: %f (ms)\n", milliseconds);
     }
+    printf("Processing time: %f (ms)\n", totalTime);
 
     // cleanup memory
     free(decrypted_password);

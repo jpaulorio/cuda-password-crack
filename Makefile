@@ -12,7 +12,7 @@ $(cpp_objects): %.o: %.cpp
 	nvcc -ccbin g++ -Wno-deprecated-gpu-targets -x cu -m64 -arch=sm_50 -I. -dc $< -o $@
 
 $(cuda_objects): %.o: %.cu
-	nvcc -ccbin g++ -Wno-deprecated-gpu-targets -x cu -m64 -arch=sm_50 -I. -dc $< -o $@
+	nvcc -ccbin g++ --ptxas-options=-v -Wno-deprecated-gpu-targets -x cu -m64 -arch=sm_50 -I. -dc $< -o $@
 
 run: all
 	@./$(output)
