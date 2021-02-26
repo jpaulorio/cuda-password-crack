@@ -106,7 +106,11 @@ crackPassword(
     const unsigned long bid = blockIdx.x;
     const unsigned int num_threads = blockDim.x;
     const unsigned long global_tid = (pageId * gridDim.x * blockDim.x) + (bid * num_threads) + tid;
-    const unsigned long global_num_threads = pageDim * gridDim.x * blockDim.x;
+
+    if (global_tid >= g_search_space_size) {
+        return;
+    }
+
     uint key_list_size = 90;
     const uint encryption_keys[] = {
         31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
@@ -119,12 +123,6 @@ crackPassword(
         419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 
         467, 479, 487, 491, 499, 503, 509, 521, 523, 541
     };
-
-    unsigned long chunk_size = g_search_space_size / global_num_threads;
-
-    if (chunk_size == 0) {
-        chunk_size = 1;
-    }
 
     fill_with_zeros(encrypted_password, 256);
     d_strcpy(g_encrypted_password, encrypted_password, 7);
