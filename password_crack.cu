@@ -87,7 +87,6 @@ __device__ void d_ulong_to_char_array(unsigned long search_pos, char *output) {
 }
 
 __device__ void d_encrypt(unsigned long input, uint encryption_key, char *encrypted) {
-    fill_with_zeros(encrypted, max_encrypted_pwd_length);
     unsigned long tmp_pwd = input * encryption_key;
     d_ulong_to_char_array(tmp_pwd, encrypted);
 }
@@ -121,7 +120,6 @@ crackPassword(
         467, 479, 487, 491, 499, 503, 509, 521, 523, 541
     };
 
-    fill_with_zeros(encrypted_password, max_encrypted_pwd_length);
     d_strcpy(g_encrypted_password, encrypted_password, 7);
 
     if (g_found) {
@@ -153,20 +151,18 @@ runTest(int argc, char **argv)
     // use command-line specified CUDA device, otherwise use device with highest Gflops/s
     int devID = findCudaDevice(argc, (const char **)argv);
 
-    unsigned int pwd_max_size = 32 + 1;
-    unsigned int key_max_size = 32 + 1;
+    const unsigned int pwd_max_size = 32 + 1;
+    const uint key_list_size = 90;
     
     char encrypted_password[pwd_max_size];
-    char encryption_key[key_max_size];
     printf("Enter the encrypted password:\n");
     scanf("%7s", encrypted_password);
     
     uint pwd_size = strlen(encrypted_password);
-    uint key_size = strlen(encryption_key);
     
     unsigned int pwd_mem_size = (pwd_size + 1) * sizeof(char);
     unsigned long search_space_size = pow(total_no_ascii_chars, 5);
-    printf("Search space size: %lu\n", search_space_size);
+    printf("Search space size: %lu\n", search_space_size * key_list_size);
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -180,7 +176,6 @@ runTest(int argc, char **argv)
     checkCudaErrors(cudaMemcpy(d_encrypted_password, encrypted_password, pwd_mem_size, cudaMemcpyHostToDevice));
 
     // setup execution parameters
-    const uint key_list_size = 90;
     const unsigned long numberIterations = pow(2,22);
     const uint num_threads = pow(2,10) / key_list_size;
     uint num_blocks = 1;
