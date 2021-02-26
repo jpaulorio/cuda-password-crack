@@ -1,34 +1,39 @@
-/*
- * Copyright 1993-2015 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
+#define total_no_ascii_chars 95
+#define max_encrypted_pwd_length 8
 
-////////////////////////////////////////////////////////////////////////////////
-// export C interface
 extern "C"
-void computeGold(float *reference, float *idata, const unsigned int len);
+void ulong_to_char_array(unsigned long search_pos, char *output);
 
-////////////////////////////////////////////////////////////////////////////////
-//! Compute reference data set
-//! Each element is multiplied with the number of threads / array length
-//! @param reference  reference data, computed but preallocated
-//! @param idata      input data as provided to device
-//! @param len        number of elements in reference / idata
-////////////////////////////////////////////////////////////////////////////////
-void
-computeGold(float *reference, float *idata, const unsigned int len)
-{
-    const float f_len = static_cast<float>(len);
-
-    for (unsigned int i = 0; i < len; ++i)
-    {
-        reference[i] = idata[i] * f_len;
+void strcpy (char *origin, char *destination, unsigned int size) {
+    for (int i=0; i < size; i++) {
+        destination[i] = origin[i];
     }
 }
 
+void fill_with_zeros(char *array, unsigned int array_lenght) {
+    for (int i=0; i < array_lenght; i++) {
+        array[i] = 0;
+    }
+}
+
+void ulong_to_char_array(unsigned long search_pos, char *output) {
+    char pwd_candidate[max_encrypted_pwd_length];
+    fill_with_zeros(pwd_candidate, max_encrypted_pwd_length);
+
+    unsigned long integer_part = search_pos / total_no_ascii_chars;
+    unsigned long remainder = search_pos % total_no_ascii_chars;
+    unsigned int idx = 0;
+    pwd_candidate[idx] = remainder + 32;
+    pwd_candidate[idx + 1] = integer_part + 32;
+
+    while (integer_part > 0) {
+        idx++;
+        remainder = integer_part % total_no_ascii_chars;
+        integer_part = integer_part / total_no_ascii_chars;
+        pwd_candidate[idx] = remainder + 32;
+        pwd_candidate[idx + 1] = integer_part + 32;
+    }
+    pwd_candidate[idx + 1] = 0;
+
+    strcpy(pwd_candidate, output, max_encrypted_pwd_length);
+}

@@ -32,6 +32,9 @@
 #define total_no_ascii_chars 95
 #define max_encrypted_pwd_length 8
 
+extern "C"
+void ulong_to_char_array(unsigned long search_pos, char *output);
+
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
    if (code != cudaSuccess) 
@@ -43,12 +46,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 ////////////////////////////////////////////////////////////////////////////////
 // declaration, forward
 void runTest(int argc, char **argv);
-
-__device__ void fill_with_zeros(char *array, uint array_lenght) {
-    for (int i=0; i < array_lenght; i++) {
-        array[i] = 0;
-    }
-}
 
 __device__ int d_strcmp (char *s1, char *s2, uint size) {
     for(int i=0; i < size; i++) {
@@ -62,28 +59,6 @@ __device__ void d_strcpy (char *origin, char *destination, uint size) {
     for (int i=0; i < size; i++) {
         destination[i] = origin[i];
     }
-}
-
-__device__ void d_ulong_to_char_array(unsigned long search_pos, char *output) {
-    char pwd_candidate[max_encrypted_pwd_length];
-    fill_with_zeros(pwd_candidate, max_encrypted_pwd_length);
-
-    unsigned long integer_part = search_pos / total_no_ascii_chars;
-    unsigned long remainder = search_pos % total_no_ascii_chars;
-    uint idx = 0;
-    pwd_candidate[idx] = remainder + 32;
-    pwd_candidate[idx + 1] = integer_part + 32;
-
-    while (integer_part > 0) {
-        idx++;
-        remainder = integer_part % total_no_ascii_chars;
-        integer_part = integer_part / total_no_ascii_chars;
-        pwd_candidate[idx] = remainder + 32;
-        pwd_candidate[idx + 1] = integer_part + 32;
-    }
-    pwd_candidate[idx + 1] = 0;
-
-    d_strcpy(pwd_candidate, output, max_encrypted_pwd_length);
 }
 
 __device__ unsigned long d_pow(unsigned long n, unsigned long power) {
@@ -108,14 +83,12 @@ __device__ unsigned long d_encrypt(unsigned long input, uint encryption_key) {
 }
 
 __device__ int g_found = 0;
+__device__ unsigned long d_answer = 0;
 
 __global__ void
-crackPassword(
-    char *g_encrypted_password, char *g_decrypted_password,
-    unsigned long pageDim, unsigned long pageId)
+crackPassword( char *g_encrypted_password, unsigned long pageDim, unsigned long pageId)
 {
     char encrypted_password[max_encrypted_pwd_length];
-    char temp_password[max_encrypted_pwd_length];
     
     const unsigned long tidx = threadIdx.x;
     const unsigned long tidy = threadIdx.y;
@@ -146,8 +119,7 @@ crackPassword(
     unsigned long tmp_encrypted = d_encrypt(global_tid, key);
 
     if (long_encrypted == tmp_encrypted) {
-        d_ulong_to_char_array(global_tid, temp_password);
-        d_strcpy(temp_password, g_decrypted_password, 7);
+        d_answer = global_tid;
         g_found = 1;
     }
 }
@@ -183,10 +155,8 @@ runTest(int argc, char **argv)
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    char *d_encrypted_password, *d_decrypted_password;
+    char *d_encrypted_password;
     checkCudaErrors(cudaMalloc((void **) &d_encrypted_password, pwd_mem_size));
-    //output
-    checkCudaErrors(cudaMalloc((void **) &d_decrypted_password, pwd_mem_size));
     //copy input to device
     checkCudaErrors(cudaMemcpy(d_encrypted_password, encrypted_password, pwd_mem_size, cudaMemcpyHostToDevice));
 
@@ -215,7 +185,7 @@ runTest(int argc, char **argv)
     float totalTime = 0;
     for (uint i=0; i < numberIterations; i++) {
         cudaEventRecord(start);
-        crackPassword<<<grid, threads>>>(d_encrypted_password, d_decrypted_password, numberIterations, i);
+        crackPassword<<<grid, threads>>>(d_encrypted_password, numberIterations, i);
         cudaEventRecord(stop);
 
         // check if kernel execution generated an error
@@ -224,14 +194,16 @@ runTest(int argc, char **argv)
         gpuErrchk(cudaDeviceSynchronize());
 
         // copy result from device to host
-        checkCudaErrors(cudaMemcpy(decrypted_password, d_decrypted_password, pwd_mem_size, cudaMemcpyDeviceToHost));
+        typeof(d_answer) answer;
+        checkCudaErrors(cudaMemcpyFromSymbol(&answer, d_answer, sizeof(answer), 0, cudaMemcpyDeviceToHost));
         
         cudaEventSynchronize(stop);
         float milliseconds = 0;
         cudaEventElapsedTime(&milliseconds, start, stop);
         totalTime += milliseconds;
 
-        if (strcmp(decrypted_password, "") != 0) {
+        if (answer != 0) {            
+            ulong_to_char_array(answer, decrypted_password);
             printf("Decrypted password: %s \n", decrypted_password);
             break;
         }
@@ -241,7 +213,6 @@ runTest(int argc, char **argv)
     // cleanup memory
     free(decrypted_password);
     checkCudaErrors(cudaFree(d_encrypted_password));
-    checkCudaErrors(cudaFree(d_decrypted_password));
 
     exit(EXIT_SUCCESS);
 }
