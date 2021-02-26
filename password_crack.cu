@@ -102,16 +102,17 @@ crackPassword(
     char temp_password[256];
     char temp_encrypted_password[256];
     
-    const unsigned long tid = threadIdx.x;
+    const unsigned long tidx = threadIdx.x;
+    const unsigned long tidy = threadIdx.y;
     const unsigned long bid = blockIdx.x;
     const unsigned int num_threads = blockDim.x;
-    const unsigned long global_tid = (pageId * gridDim.x * blockDim.x) + (bid * num_threads) + tid;
+    const unsigned long global_tid = (pageId * gridDim.x * blockDim.x) + (bid * num_threads) + tidx;
 
     if (global_tid >= g_search_space_size) {
         return;
     }
 
-    uint key_list_size = 90;
+    // uint key_list_size = 90;
     const uint encryption_keys[] = {
         31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
         73, 79, 83, 89, 97, 101, 103, 107, 109, 113,
@@ -127,19 +128,18 @@ crackPassword(
     fill_with_zeros(encrypted_password, 256);
     d_strcpy(g_encrypted_password, encrypted_password, 7);
 
-    uint key_search_pos = 0;        
+    if (g_found) {
+        return;
+    }
 
-    while (!g_found && key_search_pos < key_list_size) {
-        uint key = encryption_keys[key_search_pos];
+    uint key = encryption_keys[tidy];
 
-        d_encrypt(global_tid, key, temp_encrypted_password);
+    d_encrypt(global_tid, key, temp_encrypted_password);
 
-        if (d_strcmp(temp_encrypted_password, encrypted_password, 256) == 0) {
-            d_ulong_to_char_array(global_tid, temp_password);
-            d_strcpy(temp_password, g_decrypted_password, 7);
-            g_found = 1;
-        }
-        key_search_pos++;
+    if (d_strcmp(temp_encrypted_password, encrypted_password, 256) == 0) {
+        d_ulong_to_char_array(global_tid, temp_password);
+        d_strcpy(temp_password, g_decrypted_password, 7);
+        g_found = 1;
     }
 }
 
@@ -184,8 +184,9 @@ runTest(int argc, char **argv)
     checkCudaErrors(cudaMemcpy(d_encrypted_password, encrypted_password, pwd_mem_size, cudaMemcpyHostToDevice));
 
     // setup execution parameters
-    const unsigned long numberIterations = pow(2,8);
-    const uint num_threads = pow(2,8);
+    const uint key_list_size = 90;
+    const unsigned long numberIterations = pow(2,20);
+    const uint num_threads = pow(2,10) / key_list_size;
     uint num_blocks = 1;
     const unsigned long max_num_threads = pow(2,33);
     while (search_space_size > num_blocks * num_threads * numberIterations
@@ -194,11 +195,12 @@ runTest(int argc, char **argv)
     }
     printf("Launching %lu iterations...\n", numberIterations);
     printf("Launching %d blocks per iteration...\n", num_blocks);
-    printf("Launching %d threads per block...\n", num_threads);
-    printf("Launching %lu total threads...\n", num_blocks * num_threads * numberIterations);
+    printf("Launching %d threads per block...\n", num_threads * key_list_size);
+    printf("Launching %d threads per iteration...\n", num_blocks * num_threads * key_list_size);
+    printf("Launching %lu total threads...\n", num_blocks * num_threads * key_list_size * numberIterations);
 
-    dim3  grid(num_blocks, 1, 1);
-    dim3  threads(num_threads, 1, 1);
+    dim3 grid(num_blocks, 1, 1);
+    dim3 threads(num_threads, key_list_size, 1);
 
     // allocate mem for the result on host side
     char *decrypted_password = (char *) malloc(pwd_mem_size);
@@ -206,10 +208,8 @@ runTest(int argc, char **argv)
     // execute the kernel
     float totalTime = 0;
     for (uint i=0; i < numberIterations; i++) {
-        // printf("Iteration %d\n", i);
         cudaEventRecord(start);
         crackPassword<<<grid, threads>>>(d_encrypted_password, d_decrypted_password, search_space_size, numberIterations, i);
-    
         cudaEventRecord(stop);
 
         // check if kernel execution generated an error
