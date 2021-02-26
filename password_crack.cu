@@ -35,6 +35,9 @@
 extern "C"
 void ulong_to_char_array(unsigned long search_pos, char *output);
 
+extern "C"
+void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size);
+
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
    if (code != cudaSuccess) 
@@ -43,9 +46,9 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       if (abort) exit(code);
    }
 }
-////////////////////////////////////////////////////////////////////////////////
-// declaration, forward
-void runTest(int argc, char **argv);
+
+void runParallel(int argc, char **argv,
+    char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size);
 
 __device__ int d_strcmp (char *s1, char *s2, uint size) {
     for(int i=0; i < size; i++) {
@@ -124,20 +127,8 @@ crackPassword( char *g_encrypted_password, unsigned long pageDim, unsigned long 
     }
 }
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
-    runTest(argc, argv);
-}
-
-void
-runTest(int argc, char **argv)
-{
-    printf("%s Starting...\n\n", argv[0]);
-
-    // use command-line specified CUDA device, otherwise use device with highest Gflops/s
-    int devID = findCudaDevice(argc, (const char **)argv);
-
     const unsigned int pwd_max_size = 32 + 1;
     const uint key_list_size = 90;
     
@@ -150,6 +141,22 @@ runTest(int argc, char **argv)
     unsigned int pwd_mem_size = (pwd_size + 1) * sizeof(char);
     unsigned long search_space_size = pow(total_no_ascii_chars, 5);
     printf("Search space size: %lu\n", search_space_size * key_list_size);
+
+    runParallel(argc, argv,
+        encrypted_password, search_space_size, pwd_mem_size, key_list_size);
+    runSerial(encrypted_password, search_space_size, pwd_mem_size);
+
+    exit(EXIT_SUCCESS);
+}
+
+void
+runParallel(int argc, char **argv,
+    char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size)
+{
+    printf("Running parallel version...\n");
+
+    // use command-line specified CUDA device, otherwise use device with highest Gflops/s
+    findCudaDevice(argc, (const char **)argv);
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
@@ -213,6 +220,4 @@ runTest(int argc, char **argv)
     // cleanup memory
     free(decrypted_password);
     checkCudaErrors(cudaFree(d_encrypted_password));
-
-    exit(EXIT_SUCCESS);
 }

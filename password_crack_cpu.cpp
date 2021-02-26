@@ -1,8 +1,19 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <time.h>
+
 #define total_no_ascii_chars 95
 #define max_encrypted_pwd_length 8
 
 extern "C"
 void ulong_to_char_array(unsigned long search_pos, char *output);
+
+extern "C"
+void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size);
 
 void strcpy (char *origin, char *destination, unsigned int size) {
     for (int i=0; i < size; i++) {
@@ -36,4 +47,70 @@ void ulong_to_char_array(unsigned long search_pos, char *output) {
     pwd_candidate[idx + 1] = 0;
 
     strcpy(pwd_candidate, output, max_encrypted_pwd_length);
+}
+
+unsigned long char_array_to_ulong(char *input, uint array_lenght) {
+    unsigned long result = 0;
+    for (int i=0; i < array_lenght && input[i] != 0; i++) {
+        result += (input[i] - 32) * pow(total_no_ascii_chars, i);
+    }
+    return result;
+}
+
+unsigned long encrypt(unsigned long input, uint encryption_key) {
+    unsigned long tmp_pwd = input * encryption_key;
+    return tmp_pwd;
+}
+
+unsigned long crackPassword(char *encrypted_password, unsigned long search_space_size)
+{
+    const uint encryption_keys[] = {
+        31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
+        73, 79, 83, 89, 97, 101, 103, 107, 109, 113,
+        127, 131, 137, 139, 149, 151, 157, 163, 167, 173,
+        179, 181, 191, 193, 197, 199, 211, 223, 227, 229,
+        233, 239, 241, 251, 257, 263, 269, 271, 277, 281,
+        283, 293, 307, 311, 313, 317, 331, 337, 347, 349,
+        353, 359, 367, 373, 379, 383, 389, 397, 401, 409,
+        419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 
+        467, 479, 487, 491, 499, 503, 509, 521, 523, 541
+    };
+
+    for (unsigned long i = 0; i < search_space_size; i++)
+    {
+        for (unsigned long j = 0; j < sizeof(encryption_keys); j++)
+        {
+            uint key = encryption_keys[j];
+
+            unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
+            unsigned long tmp_encrypted = encrypt(i, key);
+// if (i == 35165 && j == 89) {
+//     printf("DEBUG: %lu = %lu", long_encrypted, tmp_encrypted);
+// }
+            if (long_encrypted == tmp_encrypted) {
+                return i;
+            }
+        }
+    }
+
+    return 0;
+}
+
+void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size)
+{
+    printf("Running serial version...\n");
+
+    clock_t start, end;
+    double cpu_time_used;
+    
+    start = clock();
+    unsigned long answer = crackPassword(encrypted_password, search_space_size);
+    end = clock();
+    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC * 1000;
+
+    char *decrypted_password = (char *) malloc(pwd_mem_size);
+    ulong_to_char_array(answer, decrypted_password);
+
+    printf("Decrypted password: %s \n", decrypted_password);
+    printf("Processing time: %f (ms)\n", cpu_time_used);
 }
