@@ -112,7 +112,6 @@ crackPassword(
         return;
     }
 
-    // uint key_list_size = 90;
     const uint encryption_keys[] = {
         31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
         73, 79, 83, 89, 97, 101, 103, 107, 109, 113,
