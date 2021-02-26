@@ -86,9 +86,25 @@ __device__ void d_ulong_to_char_array(unsigned long search_pos, char *output) {
     d_strcpy(pwd_candidate, output, max_encrypted_pwd_length);
 }
 
-__device__ void d_encrypt(unsigned long input, uint encryption_key, char *encrypted) {
+__device__ unsigned long d_pow(unsigned long n, unsigned long power) {
+    unsigned long result = 1;
+    for (int i=0; i<power; i++) {
+        result = result * n;
+    }
+    return result;
+}
+
+__device__ unsigned long d_char_array_to_ulong(char *input, uint array_lenght) {
+    unsigned long result = 0;
+    for (int i=0; i < array_lenght && input[i] != 0; i++) {
+        result += (input[i] - 32) * d_pow(total_no_ascii_chars, i);
+    }
+    return result;
+}
+
+__device__ unsigned long d_encrypt(unsigned long input, uint encryption_key) {
     unsigned long tmp_pwd = input * encryption_key;
-    d_ulong_to_char_array(tmp_pwd, encrypted);
+    return tmp_pwd;
 }
 
 __device__ int g_found = 0;
@@ -100,7 +116,6 @@ crackPassword(
 {
     char encrypted_password[max_encrypted_pwd_length];
     char temp_password[max_encrypted_pwd_length];
-    char temp_encrypted_password[max_encrypted_pwd_length];
     
     const unsigned long tidx = threadIdx.x;
     const unsigned long tidy = threadIdx.y;
@@ -119,6 +134,7 @@ crackPassword(
         419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 
         467, 479, 487, 491, 499, 503, 509, 521, 523, 541
     };
+    uint key = encryption_keys[tidy];
 
     d_strcpy(g_encrypted_password, encrypted_password, 7);
 
@@ -126,11 +142,10 @@ crackPassword(
         return;
     }
 
-    uint key = encryption_keys[tidy];
+    unsigned long long_encrypted = d_char_array_to_ulong(encrypted_password, 7);
+    unsigned long tmp_encrypted = d_encrypt(global_tid, key);
 
-    d_encrypt(global_tid, key, temp_encrypted_password);
-
-    if (d_strcmp(temp_encrypted_password, encrypted_password, max_encrypted_pwd_length) == 0) {
+    if (long_encrypted == tmp_encrypted) {
         d_ulong_to_char_array(global_tid, temp_password);
         d_strcpy(temp_password, g_decrypted_password, 7);
         g_found = 1;
