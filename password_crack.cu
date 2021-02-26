@@ -161,7 +161,7 @@ runTest(int argc, char **argv)
     checkCudaErrors(cudaMemcpy(d_encrypted_password, encrypted_password, pwd_mem_size, cudaMemcpyHostToDevice));
 
     // setup execution parameters
-    const unsigned long numberIterations = pow(2,22);
+    const unsigned long numberIterations = pow(2,24);
     const uint num_threads = pow(2,10) / key_list_size;
     uint num_blocks = 1;
     const unsigned long max_num_threads = pow(2,33);
