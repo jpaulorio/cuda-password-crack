@@ -38,6 +38,9 @@ void ulong_to_char_array(unsigned long search_pos, char *output);
 extern "C"
 void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size);
 
+extern "C"
+unsigned long char_array_to_ulong(char *input, uint array_lenght);
+
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
    if (code != cudaSuccess) 
@@ -72,14 +75,6 @@ __device__ unsigned long d_pow(unsigned long n, unsigned long power) {
     return result;
 }
 
-__device__ unsigned long d_char_array_to_ulong(char *input, uint array_lenght) {
-    unsigned long result = 0;
-    for (int i=0; i < array_lenght && input[i] != 0; i++) {
-        result += (input[i] - 32) * d_pow(total_no_ascii_chars, i);
-    }
-    return result;
-}
-
 __device__ unsigned long d_encrypt(unsigned long input, uint encryption_key) {
     unsigned long tmp_pwd = input * encryption_key;
     return tmp_pwd;
@@ -89,10 +84,8 @@ __device__ int g_found = 0;
 __device__ unsigned long d_answer = 0;
 
 __global__ void
-crackPassword( char *g_encrypted_password, unsigned long pageDim, unsigned long pageId)
+crackPassword(unsigned long encrypted_password, unsigned long pageDim, unsigned long pageId)
 {
-    char encrypted_password[max_encrypted_pwd_length];
-    
     const unsigned long tidx = threadIdx.x;
     const unsigned long tidy = threadIdx.y;
     const unsigned long bid = blockIdx.x;
@@ -112,16 +105,13 @@ crackPassword( char *g_encrypted_password, unsigned long pageDim, unsigned long 
     };
     uint key = encryption_keys[tidy];
 
-    d_strcpy(g_encrypted_password, encrypted_password, 7);
-
     if (g_found) {
         return;
     }
 
-    unsigned long long_encrypted = d_char_array_to_ulong(encrypted_password, 7);
     unsigned long tmp_encrypted = d_encrypt(global_tid, key);
 
-    if (long_encrypted == tmp_encrypted) {
+    if (encrypted_password == tmp_encrypted) {
         d_answer = global_tid;
         g_found = 1;
     }
@@ -162,11 +152,6 @@ runParallel(int argc, char **argv,
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
 
-    char *d_encrypted_password;
-    checkCudaErrors(cudaMalloc((void **) &d_encrypted_password, pwd_mem_size));
-    //copy input to device
-    checkCudaErrors(cudaMemcpy(d_encrypted_password, encrypted_password, pwd_mem_size, cudaMemcpyHostToDevice));
-
     // setup execution parameters
     const unsigned long numberIterations = pow(2,24);
     const uint num_threads = pow(2,10) / key_list_size;
@@ -188,11 +173,13 @@ runParallel(int argc, char **argv,
     // allocate mem for the result on host side
     char *decrypted_password = (char *) malloc(pwd_mem_size);
 
+    unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
+
     // execute the kernel
     float totalTime = 0;
     for (uint i=0; i < numberIterations; i++) {
         cudaEventRecord(start);
-        crackPassword<<<grid, threads>>>(d_encrypted_password, numberIterations, i);
+        crackPassword<<<grid, threads>>>(long_encrypted, numberIterations, i);
         cudaEventRecord(stop);
 
         // check if kernel execution generated an error
@@ -219,5 +206,4 @@ runParallel(int argc, char **argv,
 
     // cleanup memory
     free(decrypted_password);
-    checkCudaErrors(cudaFree(d_encrypted_password));
 }

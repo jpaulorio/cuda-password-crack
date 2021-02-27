@@ -15,6 +15,9 @@ void ulong_to_char_array(unsigned long search_pos, char *output);
 extern "C"
 void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size);
 
+extern "C"
+unsigned long char_array_to_ulong(char *input, uint array_lenght);
+
 void strcpy (char *origin, char *destination, unsigned int size) {
     for (int i=0; i < size; i++) {
         destination[i] = origin[i];
@@ -76,13 +79,14 @@ unsigned long crackPassword(char *encrypted_password, unsigned long search_space
         467, 479, 487, 491, 499, 503, 509, 521, 523, 541
     };
 
+    unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
+
     for (unsigned long i = 0; i < search_space_size; i++)
     {
         for (unsigned long j = 0; j < sizeof(encryption_keys); j++)
         {
             uint key = encryption_keys[j];
 
-            unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
             unsigned long tmp_encrypted = encrypt(i, key);
 
             if (long_encrypted == tmp_encrypted) {
