@@ -53,28 +53,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 void runParallel(int argc, char **argv,
     char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size);
 
-__device__ int d_strcmp (char *s1, char *s2, uint size) {
-    for(int i=0; i < size; i++) {
-        if(s1[i] != s2[i])
-            return 1;
-    }
-    return 0;
-}
-
-__device__ void d_strcpy (char *origin, char *destination, uint size) {
-    for (int i=0; i < size; i++) {
-        destination[i] = origin[i];
-    }
-}
-
-__device__ unsigned long d_pow(unsigned long n, unsigned long power) {
-    unsigned long result = 1;
-    for (int i=0; i<power; i++) {
-        result = result * n;
-    }
-    return result;
-}
-
 __device__ unsigned long d_encrypt(unsigned long input, uint encryption_key) {
     unsigned long tmp_pwd = input * encryption_key;
     return tmp_pwd;
