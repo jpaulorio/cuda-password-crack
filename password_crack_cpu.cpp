@@ -4,7 +4,7 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <dirent.h>
-#include <time.h>
+#include <sys/time.h>
 
 #define total_no_ascii_chars 95
 #define max_encrypted_pwd_length 8
@@ -84,9 +84,7 @@ unsigned long crackPassword(char *encrypted_password, unsigned long search_space
 
             unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
             unsigned long tmp_encrypted = encrypt(i, key);
-// if (i == 35165 && j == 89) {
-//     printf("DEBUG: %lu = %lu", long_encrypted, tmp_encrypted);
-// }
+
             if (long_encrypted == tmp_encrypted) {
                 return i;
             }
@@ -96,21 +94,34 @@ unsigned long crackPassword(char *encrypted_password, unsigned long search_space
     return 0;
 }
 
+static struct timeval tm1;
+
+static inline void start()
+{
+    gettimeofday(&tm1, NULL);
+}
+
+static inline void stop()
+{
+    struct timeval tm2;
+    gettimeofday(&tm2, NULL);
+
+    unsigned long long t = 1000 * (tm2.tv_sec - tm1.tv_sec) + (tm2.tv_usec - tm1.tv_usec) / 1000;
+    printf("Processing time: %llu (ms)\n", t);
+}
+
 void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size)
 {
     printf("Running serial version...\n");
 
-    clock_t start, end;
-    double cpu_time_used;
-    
-    start = clock();
+    start();
+
     unsigned long answer = crackPassword(encrypted_password, search_space_size);
-    end = clock();
-    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC * 1000;
 
     char *decrypted_password = (char *) malloc(pwd_mem_size);
     ulong_to_char_array(answer, decrypted_password);
 
     printf("Decrypted password: %s \n", decrypted_password);
-    printf("Processing time: %f (ms)\n", cpu_time_used);
+
+    stop();
 }
