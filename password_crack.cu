@@ -69,7 +69,8 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 void runParallel(int argc, char **argv,
     unsigned long encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size);
 
-__device__ __forceinline__ unsigned long d_encrypt(unsigned long input, uint encryption_key) {
+__device__ __forceinline__
+unsigned long d_encrypt(unsigned long input, uint encryption_key) {
     unsigned long tmp_pwd = input * encryption_key;
     return tmp_pwd;
 }

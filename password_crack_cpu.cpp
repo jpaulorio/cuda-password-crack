@@ -60,7 +60,7 @@ unsigned long char_array_to_ulong(char *input, uint array_lenght) {
     return result;
 }
 
-unsigned long encrypt(unsigned long input, uint encryption_key) {
+inline unsigned long encrypt(unsigned long input, uint encryption_key) {
     unsigned long tmp_pwd = input * encryption_key;
     return tmp_pwd;
 }
