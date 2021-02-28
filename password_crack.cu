@@ -146,7 +146,7 @@ runParallel(int argc, char **argv,
 
     // setup execution parameters
     const uint num_threads_per_block =  10;
-    uint num_blocks = 5000;
+    const uint num_blocks = 5000;
     unsigned long numberIterations = (search_space_size / (num_blocks * num_threads_per_block)) + 1;
 
     printf("Launching %lu iterations...\n", numberIterations);
