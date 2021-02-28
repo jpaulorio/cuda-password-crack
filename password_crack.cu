@@ -145,22 +145,18 @@ runParallel(int argc, char **argv,
     findCudaDevice(argc, (const char **)argv);
 
     // setup execution parameters
-    const unsigned long numberIterations = pow(2,26);
-    const uint num_threads = pow(2,10) / key_list_size;
-    uint num_blocks = 1;
-    const unsigned long max_num_threads = pow(2,33);
-    while (search_space_size > num_blocks * num_threads * numberIterations
-        && num_blocks * num_threads * numberIterations < max_num_threads) {
-        num_blocks++;
-    }
+    const uint num_threads_per_block =  10;
+    uint num_blocks = 5000;
+    unsigned long numberIterations = (search_space_size / (num_blocks * num_threads_per_block)) + 1;
+
     printf("Launching %lu iterations...\n", numberIterations);
     printf("Launching %d blocks per iteration...\n", num_blocks);
-    printf("Launching %d threads per block...\n", num_threads * key_list_size);
-    printf("Launching %d threads per iteration...\n", num_blocks * num_threads * key_list_size);
-    printf("Launching %lu total threads...\n", num_blocks * num_threads * key_list_size * numberIterations);
+    printf("Launching %d threads per block...\n", num_threads_per_block * key_list_size);
+    printf("Launching %d threads per iteration...\n", num_blocks * num_threads_per_block * key_list_size);
+    printf("Launching %lu total threads...\n", num_blocks * num_threads_per_block * key_list_size * numberIterations);
 
     dim3 grid(num_blocks, 1, 1);
-    dim3 threads(num_threads, key_list_size, 1);
+    dim3 threads(num_threads_per_block, key_list_size, 1);
 
     // allocate mem for the result on host side
     char *decrypted_password = (char *) malloc(pwd_mem_size);
