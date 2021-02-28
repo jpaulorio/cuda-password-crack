@@ -36,7 +36,7 @@ extern "C"
 void ulong_to_char_array(unsigned long search_pos, char *output);
 
 extern "C"
-void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size);
+void runSerial(unsigned long encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size);
 
 extern "C"
 unsigned long char_array_to_ulong(char *input, uint array_lenght);
@@ -67,7 +67,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 
 void runParallel(int argc, char **argv,
-    char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size);
+    unsigned long encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size);
 
 __device__ __forceinline__ unsigned long d_encrypt(unsigned long input, uint encryption_key) {
     unsigned long tmp_pwd = input * encryption_key;
@@ -126,28 +126,26 @@ int main(int argc, char **argv)
     unsigned long search_space_size = pow(total_no_ascii_chars, 5);
     printf("Search space size: %lu\n", search_space_size * key_list_size);
 
+    unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
+
     runParallel(argc, argv,
-        encrypted_password, search_space_size, pwd_mem_size, key_list_size);
-    runSerial(encrypted_password, search_space_size, pwd_mem_size);
+        long_encrypted, search_space_size, pwd_mem_size, key_list_size);
+    runSerial(long_encrypted, search_space_size, pwd_mem_size);
 
     exit(EXIT_SUCCESS);
 }
 
 void
 runParallel(int argc, char **argv,
-    char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size)
+    unsigned long encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size)
 {
     printf("Running parallel version...\n");
 
     // use command-line specified CUDA device, otherwise use device with highest Gflops/s
     findCudaDevice(argc, (const char **)argv);
 
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
     // setup execution parameters
-    const unsigned long numberIterations = pow(2,24);
+    const unsigned long numberIterations = pow(2,26);
     const uint num_threads = pow(2,10) / key_list_size;
     uint num_blocks = 1;
     const unsigned long max_num_threads = pow(2,33);
@@ -167,13 +165,10 @@ runParallel(int argc, char **argv,
     // allocate mem for the result on host side
     char *decrypted_password = (char *) malloc(pwd_mem_size);
 
-    unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
-
     start();
     // execute the kernel
-    float totalTime = 0;
     for (uint i=0; i < numberIterations; i++) {
-        crackPassword<<<grid, threads>>>(long_encrypted, numberIterations, i);
+        crackPassword<<<grid, threads>>>(encrypted_password, numberIterations, i);
 
         // check if kernel execution generated an error
         getLastCudaError("Kernel execution failed");

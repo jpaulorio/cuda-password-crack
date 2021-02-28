@@ -13,7 +13,7 @@ extern "C"
 void ulong_to_char_array(unsigned long search_pos, char *output);
 
 extern "C"
-void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size);
+void runSerial(unsigned long encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size);
 
 extern "C"
 unsigned long char_array_to_ulong(char *input, uint array_lenght);
@@ -65,7 +65,7 @@ unsigned long encrypt(unsigned long input, uint encryption_key) {
     return tmp_pwd;
 }
 
-unsigned long crackPassword(char *encrypted_password, unsigned long search_space_size)
+unsigned long crackPassword(unsigned long encrypted_password, unsigned long search_space_size)
 {
     const uint encryption_keys[] = {
         31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
@@ -79,17 +79,15 @@ unsigned long crackPassword(char *encrypted_password, unsigned long search_space
         467, 479, 487, 491, 499, 503, 509, 521, 523, 541
     };
 
-    unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
-
     for (unsigned long i = 0; i < search_space_size; i++)
     {
-        for (unsigned long j = 0; j < sizeof(encryption_keys); j++)
+        for (unsigned long j = 0; j < sizeof(encryption_keys) / sizeof(encryption_keys[0]); j++)
         {
             uint key = encryption_keys[j];
 
             unsigned long tmp_encrypted = encrypt(i, key);
 
-            if (long_encrypted == tmp_encrypted) {
+            if (encrypted_password == tmp_encrypted) {
                 return i;
             }
         }
@@ -114,7 +112,7 @@ static inline void stop()
     printf("Processing time: %llu (ms)\n", t);
 }
 
-void runSerial(char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size)
+void runSerial(unsigned long encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size)
 {
     printf("Running serial version...\n");
 
