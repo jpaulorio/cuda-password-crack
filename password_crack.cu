@@ -41,6 +41,22 @@ void runSerial(char *encrypted_password, unsigned long search_space_size, unsign
 extern "C"
 unsigned long char_array_to_ulong(char *input, uint array_lenght);
 
+static struct timeval tm1;
+
+static inline void start()
+{
+    gettimeofday(&tm1, NULL);
+}
+
+static inline void stop()
+{
+    struct timeval tm2;
+    gettimeofday(&tm2, NULL);
+
+    unsigned long long t = 1000 * (tm2.tv_sec - tm1.tv_sec) + (tm2.tv_usec - tm1.tv_usec) / 1000;
+    printf("Processing time: %llu (ms)\n", t);
+}
+
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
    if (code != cudaSuccess) 
@@ -53,7 +69,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 void runParallel(int argc, char **argv,
     char *encrypted_password, unsigned long search_space_size, unsigned int pwd_mem_size, uint key_list_size);
 
-__device__ unsigned long d_encrypt(unsigned long input, uint encryption_key) {
+__device__ __forceinline__ unsigned long d_encrypt(unsigned long input, uint encryption_key) {
     unsigned long tmp_pwd = input * encryption_key;
     return tmp_pwd;
 }
@@ -153,12 +169,11 @@ runParallel(int argc, char **argv,
 
     unsigned long long_encrypted = char_array_to_ulong(encrypted_password, 7);
 
+    start();
     // execute the kernel
     float totalTime = 0;
     for (uint i=0; i < numberIterations; i++) {
-        cudaEventRecord(start);
         crackPassword<<<grid, threads>>>(long_encrypted, numberIterations, i);
-        cudaEventRecord(stop);
 
         // check if kernel execution generated an error
         getLastCudaError("Kernel execution failed");
@@ -169,18 +184,13 @@ runParallel(int argc, char **argv,
         typeof(d_answer) answer;
         checkCudaErrors(cudaMemcpyFromSymbol(&answer, d_answer, sizeof(answer), 0, cudaMemcpyDeviceToHost));
         
-        cudaEventSynchronize(stop);
-        float milliseconds = 0;
-        cudaEventElapsedTime(&milliseconds, start, stop);
-        totalTime += milliseconds;
-
         if (answer != 0) {            
             ulong_to_char_array(answer, decrypted_password);
             printf("Decrypted password: %s \n", decrypted_password);
             break;
         }
     }
-    printf("Processing time: %f (ms)\n", totalTime);
+    stop();
 
     // cleanup memory
     free(decrypted_password);
